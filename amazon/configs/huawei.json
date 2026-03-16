@@ -5,6 +5,16 @@
   "listing_pages": [
     "https://www.amazon.fr/s?i=electronics&rh=n%3A218193031%2Cp_n_condition-type%3A15135266031%2Cp_123%3A32374&dc&ref=sr_nr_p_123_9"
   ],
-  "targets_file": "targets/targets.xlsx",
-  "max_pages": 10
+  "max_pages": 10,
+  "targets": [
+    "Pura 70",
+    "Pura 70 pro",
+    "Pura 70 ultra",
+    "Pura 60",
+    "Pura 60 pro",
+    "Pura 60 ultra",
+    "Pura 50",
+    "Pura 50 pro",
+    "Pura 50 ultra"
+  ]
 }
