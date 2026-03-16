@@ -3,8 +3,8 @@
   "output_excel": "amazon/outputs/amazon_iphone.xlsx",
   "state_file": "amazon/state/iphone_state.json",
   "listing_pages": [
-    "https://www.amazon.fr/s?i=electronics&rh=n%3A218193031%2Cp_n_condition-type%3A15135266031%2Cp_123%3A110955&dc&ds=v1%3ANNtGvSBiIpKyLwM4grG45wx28iIlyMlRROp%2BGnE5Wuw&qid=1772545011&rnid=91049112031&ref=sr_nr_p_123_1",
-    "https://www.amazon.fr/s?i=electronics&rh=n%3A218193031%2Cp_n_condition-type%3A15135266031%2Cp_123%3A110955&dc&page=2&xpid=51kCCN7ofTieE&qid=1772545103&rnid=91049112031&ref=sr_pg_2"
+    "https://www.amazon.fr/s?i=electronics&rh=n%3A218193031%2Cp_n_condition-type%3A15135266031%2Cp_123%3A110955&dc&ref=sr_nr_p_123_1"
   ],
-  "targets_file": "targets/targets.xlsx"
+  "targets_file": "targets/targets.xlsx",
+  "max_pages": 9
 }
