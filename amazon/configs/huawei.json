@@ -3,8 +3,8 @@
   "output_excel": "amazon/outputs/amazon_huawei.xlsx",
   "state_file": "amazon/state/huawei_state.json",
   "listing_pages": [
-    "https://www.amazon.fr/s?i=electronics&rh=n%3A218193031%2Cp_n_condition-type%3A15135266031%2Cp_123%3A32374&dc&qid=1772545287&rnid=91049112031&ref=sr_nr_p_123_9&ds=v1%3ArygDWAizNBh4rafN9%2BahqMwWSxemY3G%2BEVcixdiU81s",
-    "https://www.amazon.fr/s?i=electronics&rh=n%3A218193031%2Cp_n_condition-type%3A15135266031%2Cp_123%3A32374&dc&page=2&xpid=MxK826dWAZxQ7&qid=1772545297&rnid=91049112031&ref=sr_pg_2"
+    "https://www.amazon.fr/s?i=electronics&rh=n%3A218193031%2Cp_n_condition-type%3A15135266031%2Cp_123%3A32374&dc&ref=sr_nr_p_123_9"
   ],
-  "targets_file": "targets/targets.xlsx"
+  "targets_file": "targets/targets.xlsx",
+  "max_pages": 10
 }
