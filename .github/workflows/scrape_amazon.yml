@@ -1,1 +1,52 @@
 name: Update Amazon trackers
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # toutes les heures
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        brand: [iphone, samsung, xiaomi, huawei]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r amazon/requirements.txt
+          python -m playwright install chromium
+
+      - name: Run scraper
+        run: |
+          python amazon/src/run.py amazon/configs/${{ matrix.brand }}.json
+
+      - name: Commit & push results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git pull --rebase origin main || true
+
+          git add amazon/outputs/*.xlsx amazon/state/*.json || true
+          git commit -m "Update Amazon ${{ matrix.brand }} tracker" || echo "No changes to commit"
+
+          git pull --rebase origin main || true
+          git push || true
