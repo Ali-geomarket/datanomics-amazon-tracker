@@ -1,0 +1,10 @@
+{
+  "brand": "xiaomi",
+  "output_excel": "amazon/outputs/amazon_xiaomi.xlsx",
+  "state_file": "amazon/state/xiaomi_state.json",
+  "listing_pages": [
+    "https://www.amazon.fr/s?i=electronics&rh=n%3A218193031%2Cp_n_condition-type%3A15135266031%2Cp_123%3A338933&dc&qid=1772545206&rnid=91049112031&ref=sr_nr_p_123_4&ds=v1%3ADV%2BgmM5c%2FCXziqse5hd8MYryMzsHL90ZzrZ%2FiOT2qHs",
+    "https://www.amazon.fr/s?i=electronics&rh=n%3A218193031%2Cp_n_condition-type%3A15135266031%2Cp_123%3A338933&dc&page=2&xpid=auzH2R8J5a2Jk&qid=1772545222&rnid=91049112031&ref=sr_pg_2"
+  ],
+  "targets_file": "targets/targets.xlsx"
+}
