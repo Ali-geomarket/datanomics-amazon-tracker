@@ -1,0 +1,10 @@
+{
+  "brand": "samsung",
+  "output_excel": "amazon/outputs/amazon_samsung.xlsx",
+  "state_file": "amazon/state/samsung_state.json",
+  "listing_pages": [
+    "https://www.amazon.fr/s?i=electronics&rh=n%3A218193031%2Cp_n_condition-type%3A15135266031%2Cp_123%3A46655&dc&qid=1772545174&rnid=91049112031&ref=sr_nr_p_123_2&ds=v1%3AjPWC32IdwT%2FBZ94exMdOZ3hv0Z5AO3yB4F7409VmT2w",
+    "https://www.amazon.fr/s?i=electronics&rh=n%3A218193031%2Cp_n_condition-type%3A15135266031%2Cp_123%3A46655&dc&page=2&xpid=167mdLtVlF399&qid=1772545177&rnid=91049112031&ref=sr_pg_2"
+  ],
+  "targets_file": "targets/targets.xlsx"
+}
