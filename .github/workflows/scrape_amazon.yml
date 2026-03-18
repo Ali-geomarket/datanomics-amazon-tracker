@@ -37,6 +37,7 @@ jobs:
       - name: Run scraper
         run: |
           python amazon/src/run.py amazon/configs/${{ matrix.brand }}.json
+        continue-on-error: true
 
       - name: Commit & push results
         run: |
