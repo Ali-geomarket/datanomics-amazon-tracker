@@ -116,7 +116,15 @@ def main(config_path: str) -> None:
     print(f"[INFO] Opening listing: {url}")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+            ],
+        )
+
         context = browser.new_context(
             locale="fr-FR",
             user_agent=(
@@ -129,6 +137,13 @@ def main(config_path: str) -> None:
         )
 
         page = context.new_page()
+
+        page.add_init_script("""
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined
+        })
+        """)
+
         page.set_default_timeout(30000)
 
         page.goto(url, wait_until="domcontentloaded")
