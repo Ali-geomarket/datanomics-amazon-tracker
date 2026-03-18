@@ -47,10 +47,11 @@ def build_listing_url(base_url: str, page_num: int) -> str:
 
 def accept_cookies_if_present(page) -> None:
     selectors = [
-        '#sp-cc-accept',
+        "#sp-cc-accept",
         'input[name="accept"]',
         'button:has-text("Accepter")',
         'button:has-text("Tout accepter")',
+        'button:has-text("J’accepte")',
     ]
     for sel in selectors:
         try:
@@ -86,6 +87,25 @@ def match_product(title: str) -> bool:
     return False
 
 
+def humanize_page(page) -> None:
+    try:
+        page.wait_for_timeout(3000)
+    except Exception:
+        pass
+
+    try:
+        page.mouse.move(500, 500)
+        time.sleep(1)
+        page.mouse.move(800, 650)
+        time.sleep(1)
+        page.mouse.wheel(0, 900)
+        time.sleep(2)
+        page.mouse.wheel(0, 700)
+        time.sleep(2)
+    except Exception:
+        pass
+
+
 def main(config_path: str) -> None:
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = json.load(f)
@@ -96,7 +116,7 @@ def main(config_path: str) -> None:
     print(f"[INFO] Opening listing: {url}")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=False)
         context = browser.new_context(
             locale="fr-FR",
             user_agent=(
@@ -104,23 +124,23 @@ def main(config_path: str) -> None:
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/122.0.0.0 Safari/537.36"
             ),
-            viewport={"width": 1440, "height": 2200},
+            viewport={"width": 1366, "height": 768},
+            java_script_enabled=True,
         )
+
         page = context.new_page()
         page.set_default_timeout(30000)
 
         page.goto(url, wait_until="domcontentloaded")
-        time.sleep(5)
-
+        humanize_page(page)
         accept_cookies_if_present(page)
+        humanize_page(page)
 
         try:
-            page.mouse.wheel(0, 1200)
-            time.sleep(2)
-        except Exception:
-            pass
-
-        print(f"[INFO] Page title: {page.title()}")
+            title = page.title()
+            print(f"[INFO] Page title: {title}")
+        except Exception as e:
+            print(f"[WARN] Impossible to read title: {e}")
 
         try:
             body_preview = page.locator("body").inner_text()[:1200]
