@@ -2,7 +2,7 @@ name: Update Amazon trackers
 
 on:
   schedule:
-    - cron: "0 * * * *"   # toutes les heures
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        brand: [iphone, samsung, xiaomi, huawei]
+        brand: [iphone]
 
     steps:
       - name: Checkout
@@ -38,16 +38,3 @@ jobs:
         run: |
           python amazon/src/run.py amazon/configs/${{ matrix.brand }}.json
         continue-on-error: true
-
-      - name: Commit & push results
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git pull --rebase origin main || true
-
-          git add amazon/outputs/*.xlsx amazon/state/*.json || true
-          git commit -m "Update Amazon ${{ matrix.brand }} tracker" || echo "No changes to commit"
-
-          git pull --rebase origin main || true
-          git push || true
