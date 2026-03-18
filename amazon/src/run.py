@@ -9,6 +9,25 @@ from playwright.sync_api import sync_playwright
 
 AMAZON_DOMAIN = "https://www.amazon.fr"
 
+TARGETS = [
+    "iphone 17",
+    "iphone 17 air",
+    "iphone 17 pro",
+    "iphone 17 pro max",
+    "iphone 16",
+    "iphone 16 plus",
+    "iphone 16 pro",
+    "iphone 16 pro max",
+    "iphone 15",
+    "iphone 15 plus",
+    "iphone 15 pro",
+    "iphone 15 pro max",
+    "iphone 14",
+    "iphone 14 plus",
+    "iphone 14 pro",
+    "iphone 14 pro max",
+]
+
 
 def build_listing_url(base_url: str, page_num: int) -> str:
     parsed = urlparse(base_url)
@@ -43,6 +62,28 @@ def accept_cookies_if_present(page) -> None:
                 return
         except Exception:
             pass
+
+
+def normalize_title(s: str) -> str:
+    s = (s or "").lower().strip()
+    s = s.replace("+", " plus ")
+    s = s.replace("iphone+", "iphone plus")
+    s = s.replace("gb", "go")
+    s = " ".join(s.split())
+    return s
+
+
+def match_product(title: str) -> bool:
+    if not title:
+        return False
+
+    t = normalize_title(title)
+
+    for target in TARGETS:
+        if target in t:
+            return True
+
+    return False
 
 
 def main(config_path: str) -> None:
@@ -118,8 +159,10 @@ def main(config_path: str) -> None:
         print(f"[OK] Selected selector: {chosen_selector}")
 
         found = 0
+        matched = 0
+
         for i in range(cards.count()):
-            if found >= 5:
+            if found >= 10:
                 break
 
             card = cards.nth(i)
@@ -147,14 +190,21 @@ def main(config_path: str) -> None:
             except Exception:
                 pass
 
+            found += 1
+
+            if not match_product(title):
+                continue
+
+            matched += 1
+
             print("-" * 80)
+            print("[MATCH]")
             print(f"ASIN  : {asin}")
             print(f"TITLE : {title}")
             print(f"URL   : {url_product}")
 
-            found += 1
-
-        print(f"[DONE] Number of products printed: {found}")
+        print(f"[DONE] Number of cards inspected: {found}")
+        print(f"[DONE] Number of matched products: {matched}")
 
         context.close()
         browser.close()
