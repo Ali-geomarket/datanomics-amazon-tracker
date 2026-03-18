@@ -2,17 +2,14 @@
 # -*- coding: utf-8 -*-
 
 """
-Amazon smartphone tracker - V1
+Amazon smartphone tracker - JSON targets version
 
 Objectif :
-- Scraper Amazon FR pour suivre les smartphones par marque
-- Stocker une ligne par : produit x vendeur x état
-- Ajouter une colonne timestamp de prix à chaque run
-- Préparer l'analyse de pricing algorithmique vendeur x produit
-
-Sortie Excel :
-- colonnes fixes descriptives
-- + une colonne horodatée contenant le prix observé au run
+- Lire les produits cibles directement depuis les fichiers JSON de config
+- Parcourir les listings Amazon par marque
+- Garder seulement les produits qui matchent la liste cible
+- Scraper les infos produit / offres vendeurs
+- Mettre à jour un Excel historique avec une colonne timestamp par run
 """
 
 import os
@@ -34,7 +31,7 @@ HEADLESS = True
 DEFAULT_TIMEOUT_MS = 30000
 SLEEP_LISTING_SEC = 1.2
 SLEEP_PRODUCT_SEC = 1.5
-MAX_PRODUCTS_PER_RUN = 80
+MAX_PRODUCTS_PER_RUN = 120
 
 AMAZON_DOMAIN = "https://www.amazon.fr"
 
@@ -57,12 +54,6 @@ def safe_str(x) -> Optional[str]:
 
 
 def parse_price_eur(text: Optional[str]) -> Optional[float]:
-    """
-    Exemples :
-    799,00€
-    72499€
-    724,99 €
-    """
     if not text:
         return None
 
@@ -109,14 +100,9 @@ def canonical_product_url(url: Optional[str]) -> Optional[str]:
 
 
 def build_listing_url(base_url: str, page_num: int) -> str:
-    """
-    Construit proprement l'URL d'une page listing.
-    On conserve l'URL de base mais on retire les paramètres très volatils.
-    """
     parsed = urlparse(base_url)
     query = parse_qs(parsed.query)
 
-    # paramètres volatils / inutiles
     for k in ["qid", "xpid", "ds", "ref", "sr", "dib", "dib_tag", "sbo", "__mk_fr_FR"]:
         query.pop(k, None)
 
@@ -129,64 +115,81 @@ def build_listing_url(base_url: str, page_num: int) -> str:
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
 
 
-def read_targets(targets_file: Optional[str]) -> pd.DataFrame:
-    """
-    Colonnes attendues si dispo :
-    - idsmartphone
-    - label_cible
-    - ean
-    - url_seed
+def normalize_for_match(s: str) -> str:
+    s = normalize_text(s).lower()
 
-    Si le fichier n'existe pas, on retourne un DataFrame vide.
-    """
-    if not targets_file or not os.path.exists(targets_file):
-        return pd.DataFrame(columns=["idsmartphone", "label_cible", "ean", "url_seed", "asin_seed"])
+    replacements = {
+        "+": " plus ",
+        "gb": "go",
+        "iphone": "iphone",
+        "titane noir": "noir titane",
+        "titanium": "titane",
+        "iphone+": "iphone plus",
+        "pro max": "pro max",
+        "air": "air",
+    }
 
-    if targets_file.lower().endswith(".xlsx"):
-        df = pd.read_excel(targets_file, dtype=str)
-    else:
-        df = pd.read_csv(targets_file, dtype=str)
+    for old, new in replacements.items():
+        s = s.replace(old, new)
 
-    for col in ["idsmartphone", "label_cible", "ean", "url_seed"]:
-        if col not in df.columns:
-            df[col] = None
-
-    df = df.fillna("")
-    df["asin_seed"] = df["url_seed"].apply(extract_asin_from_url)
-    return df
+    s = re.sub(r"[^a-z0-9àâçéèêëîïôûùüÿñæœ ]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 
-def guess_target_id(title: str, asin: Optional[str], targets_df: pd.DataFrame) -> Optional[str]:
-    """
-    Rattachement simple :
-    1) match direct par ASIN si url_seed existe
-    2) sinon match souple via label_cible normalisé contenu dans le titre
-    """
-    if targets_df.empty:
+def read_targets_from_config(targets_list: Optional[list]) -> pd.DataFrame:
+    if not targets_list:
+        return pd.DataFrame(columns=["idsmartphone", "label_cible"])
+
+    rows = []
+    for i, label in enumerate(targets_list, start=1):
+        rows.append({
+            "idsmartphone": f"T{i}",
+            "label_cible": normalize_text(label)
+        })
+
+    return pd.DataFrame(rows)
+
+
+def guess_target_id(title: str, targets_df: pd.DataFrame) -> Optional[str]:
+    if targets_df.empty or not title:
         return None
 
-    if asin:
-        m = targets_df[targets_df["asin_seed"] == asin]
-        if not m.empty:
-            return safe_str(m.iloc[0]["idsmartphone"])
+    title_n = normalize_for_match(title)
 
-    title_n = normalize_text(title).lower()
-
-    def norm_simple(s: str) -> str:
-        s = normalize_text(s).lower()
-        s = s.replace("+", " plus ")
-        s = re.sub(r"[^a-z0-9àâçéèêëîïôûùüÿñæœ ]+", " ", s)
-        s = re.sub(r"\s+", " ", s).strip()
-        return s
-
-    title_n = norm_simple(title_n)
+    best_id = None
+    best_label = None
+    best_score = -1
 
     for _, row in targets_df.iterrows():
-        label = norm_simple(row.get("label_cible", ""))
-        if label and label in title_n:
-            return safe_str(row.get("idsmartphone"))
+        label = normalize_for_match(row.get("label_cible", ""))
+        if not label:
+            continue
+
+        tokens = [tok for tok in label.split() if tok not in {"noir"}]
+        score = sum(1 for tok in tokens if tok in title_n)
+
+        if score > best_score:
+            best_score = score
+            best_id = safe_str(row.get("idsmartphone"))
+            best_label = safe_str(row.get("label_cible"))
+
+    if best_label:
+        tokens = [tok for tok in normalize_for_match(best_label).split() if tok not in {"noir"}]
+        threshold = max(2, len(tokens) - 1)
+        if best_score >= threshold:
+            return best_id
 
     return None
+
+
+def get_label_from_id(targets_df: pd.DataFrame, target_id: Optional[str]) -> Optional[str]:
+    if not target_id or targets_df.empty:
+        return None
+    m = targets_df[targets_df["idsmartphone"] == target_id]
+    if m.empty:
+        return None
+    return safe_str(m.iloc[0]["label_cible"])
 
 
 # -------------------------
@@ -234,18 +237,59 @@ def accept_cookies_if_present(page) -> None:
 def scrape_listing_page(page, url: str) -> List[Dict[str, Any]]:
     print(f"[LISTING] {url}")
     page.goto(url, wait_until="domcontentloaded")
-    time.sleep(2)
+    time.sleep(4)
     accept_cookies_if_present(page)
+
+    try:
+        page.mouse.wheel(0, 1500)
+        time.sleep(1.5)
+        page.mouse.wheel(0, 1500)
+        time.sleep(1.5)
+    except Exception:
+        pass
+
+    try:
+        print(f"  title={page.title()}")
+    except Exception:
+        pass
+
+    try:
+        body_txt = normalize_text(page.locator("body").inner_text())[:800]
+        print(f"  body_preview={body_txt}")
+    except Exception:
+        pass
 
     products = []
 
-    cards = page.locator('[data-component-type="s-search-result"][data-asin]')
-    count = cards.count()
+    candidate_selectors = [
+        '[data-component-type="s-search-result"][data-asin]',
+        'div.s-result-item[data-asin]',
+        '[data-asin]:has(h2)',
+    ]
+
+    cards = None
+    count = 0
+
+    for sel in candidate_selectors:
+        try:
+            loc = page.locator(sel)
+            c = loc.count()
+            print(f"  selector={sel} -> {c}")
+            if c > 0:
+                cards = loc
+                count = c
+                break
+        except Exception:
+            pass
+
+    if cards is None or count == 0:
+        return []
 
     for i in range(count):
         card = cards.nth(i)
+
         asin = safe_str(card.get_attribute("data-asin"))
-        if not asin:
+        if not asin or len(asin) != 10:
             continue
 
         title = None
@@ -255,12 +299,12 @@ def scrape_listing_page(page, url: str) -> List[Dict[str, Any]]:
         review_count = None
 
         try:
-            title = safe_str(card.locator("h2 span").first.inner_text())
+            title = safe_str(card.locator("h2").first.inner_text())
         except Exception:
             pass
 
         try:
-            href = card.locator("h2 a").first.get_attribute("href")
+            href = card.locator("a[href*='/dp/']").first.get_attribute("href")
             if href:
                 product_url = href if href.startswith("http") else AMAZON_DOMAIN + href
                 product_url = canonical_product_url(product_url)
@@ -283,11 +327,13 @@ def scrape_listing_page(page, url: str) -> List[Dict[str, Any]]:
             pass
 
         try:
-            rc = safe_str(card.locator("span.a-size-base.s-underline-text").first.inner_text())
+            rc = safe_str(card.locator("span.a-size-base").nth(0).inner_text())
             if rc:
-                rc = rc.replace(" ", "").replace(".", "")
-                if rc.isdigit():
-                    review_count = int(rc)
+                m = re.search(r"(\d[\d\s\.]*)", rc)
+                if m:
+                    val = m.group(1).replace(" ", "").replace(".", "")
+                    if val.isdigit():
+                        review_count = int(val)
         except Exception:
             pass
 
@@ -310,6 +356,18 @@ def scrape_listing_page(page, url: str) -> List[Dict[str, Any]]:
 # Product page scraping
 # -------------------------
 
+def extract_value_after_label(text: str, label: str) -> Optional[str]:
+    if not text:
+        return None
+
+    labels = ["Expéditeur", "Vendeur", "État", "Retours", "Paiement", "Assistance", "Plans d'assurance"]
+    pattern = rf"{re.escape(label)}\s+(.*?)(?=\s+(?:{'|'.join(map(re.escape, labels))})\b|$)"
+    m = re.search(pattern, text, flags=re.IGNORECASE)
+    if m:
+        return safe_str(m.group(1))
+    return None
+
+
 def extract_product_main_info(page) -> Dict[str, Any]:
     out = {
         "title": None,
@@ -329,7 +387,6 @@ def extract_product_main_info(page) -> Dict[str, Any]:
     except Exception:
         pass
 
-    # prix principal
     for sel in [
         ".a-price .a-offscreen",
         "#corePriceDisplay_desktop_feature_div .a-offscreen",
@@ -344,7 +401,6 @@ def extract_product_main_info(page) -> Dict[str, Any]:
         except Exception:
             pass
 
-    # disponibilité
     for sel in [
         "#availability span",
         "#outOfStock span",
@@ -358,7 +414,6 @@ def extract_product_main_info(page) -> Dict[str, Any]:
         except Exception:
             pass
 
-    # rating / reviews
     try:
         txt = safe_str(page.locator("#acrPopover").first.get_attribute("title"))
         if txt:
@@ -379,24 +434,20 @@ def extract_product_main_info(page) -> Dict[str, Any]:
     except Exception:
         pass
 
-    # style / pack / taille
     try:
         style_label = page.locator('span:has-text("Style:")').first
         if style_label.count() > 0:
-            parent_txt = safe_str(style_label.locator("xpath=..").inner_text())
-            out["style_observed"] = parent_txt
+            out["style_observed"] = safe_str(style_label.locator("xpath=..").inner_text())
     except Exception:
         pass
 
     try:
         size_label = page.locator('span:has-text("Taille:")').first
         if size_label.count() > 0:
-            parent_txt = safe_str(size_label.locator("xpath=..").inner_text())
-            out["storage_observed"] = parent_txt
+            out["storage_observed"] = safe_str(size_label.locator("xpath=..").inner_text())
     except Exception:
         pass
 
-    # vendeur / expéditeur / état (bloc de droite)
     try:
         right_panel = page.locator("#tabular-buybox").first
         if right_panel.count() > 0:
@@ -404,12 +455,10 @@ def extract_product_main_info(page) -> Dict[str, Any]:
             out["seller_name_main"] = extract_value_after_label(txt, "Vendeur")
             shipped = extract_value_after_label(txt, "Expéditeur")
             out["shipped_by_main"] = shipped or out["seller_name_main"]
-            cond = extract_value_after_label(txt, "État")
-            out["condition_label_main"] = cond
+            out["condition_label_main"] = extract_value_after_label(txt, "État")
     except Exception:
         pass
 
-    # fallback : on lit toute la colonne buybox
     if not out["seller_name_main"] or not out["condition_label_main"]:
         try:
             txt = normalize_text(page.locator("#desktop_buybox").first.inner_text())
@@ -426,27 +475,7 @@ def extract_product_main_info(page) -> Dict[str, Any]:
     return out
 
 
-def extract_value_after_label(text: str, label: str) -> Optional[str]:
-    """
-    Cherche par ex :
-    Expéditeur Amazon Vendeur Amazon Retours ...
-    État Reconditionné - Excellent Retours ...
-    """
-    if not text:
-        return None
-
-    labels = ["Expéditeur", "Vendeur", "État", "Retours", "Paiement", "Assistance", "Plans d'assurance"]
-    pattern = rf"{re.escape(label)}\s+(.*?)(?=\s+(?:{'|'.join(map(re.escape, labels))})\b|$)"
-    m = re.search(pattern, text, flags=re.IGNORECASE)
-    if m:
-        return safe_str(m.group(1))
-    return None
-
-
 def go_to_all_offers_if_possible(page) -> Optional[str]:
-    """
-    Essaie d’ouvrir la zone / page 'Autres vendeurs' si dispo.
-    """
     candidate_selectors = [
         'a:has-text("Neuf et d’occasion")',
         'a:has-text("Autres vendeurs")',
@@ -476,7 +505,6 @@ def scrape_offers_from_offers_page(page, offers_url: str, asin: str, product_tit
 
     offers = []
 
-    # cartes d'offres
     candidate_blocks = [
         '[data-cy="aod-offer"]',
         '#aod-offer',
@@ -515,7 +543,6 @@ def scrape_offers_from_offers_page(page, offers_url: str, asin: str, product_tit
         except Exception:
             txt = ""
 
-        # vendeur
         seller_selectors = [
             'a[href*="seller="]',
             'a[href*="me="]',
@@ -532,14 +559,11 @@ def scrape_offers_from_offers_page(page, offers_url: str, asin: str, product_tit
             except Exception:
                 pass
 
-        # fallback vendeur dans le texte
         if not seller_name:
             seller_name = extract_value_after_label(txt, "Vendeur")
 
         shipped_by = extract_value_after_label(txt, "Expéditeur") or seller_name
 
-        # état
-        # exemples : Neuf / Occasion / Reconditionné - Excellent
         m = re.search(r"\b(Neuf|Occasion|Reconditionné(?:\s*-\s*[A-Za-zÀ-ÿ]+)?)\b", txt, flags=re.IGNORECASE)
         if m:
             condition_label = safe_str(m.group(1))
@@ -569,7 +593,6 @@ def scrape_product_and_offers(page, url_product: str, asin: str) -> List[Dict[st
 
     rows = []
 
-    # offre principale
     rows.append(
         {
             "asin": asin,
@@ -588,7 +611,6 @@ def scrape_product_and_offers(page, url_product: str, asin: str) -> List[Dict[st
         }
     )
 
-    # autres offres
     offers_url = go_to_all_offers_if_possible(page)
     if offers_url:
         extra_offers = scrape_offers_from_offers_page(page, offers_url, asin=asin, product_title=info.get("title"))
@@ -701,11 +723,11 @@ def run_brand(config_path: str) -> None:
 
     brand = cfg.get("brand")
     output_excel = cfg["output_excel"]
-    targets_file = cfg.get("targets_file")
     listing_pages = cfg.get("listing_pages", [])
     max_pages = int(cfg.get("max_pages", 5))
+    targets_list = cfg.get("targets", [])
 
-    targets_df = read_targets(targets_file)
+    targets_df = read_targets_from_config(targets_list)
 
     all_listing_products: List[Dict[str, Any]] = []
     seen_asins = set()
@@ -714,7 +736,6 @@ def run_brand(config_path: str) -> None:
         browser, context, page = make_browser(p)
 
         try:
-            # 1) listings
             for base_url in listing_pages:
                 for page_num in range(1, max_pages + 1):
                     url = build_listing_url(base_url, page_num)
@@ -730,23 +751,29 @@ def run_brand(config_path: str) -> None:
 
                     if not page_rows:
                         print(f"  -> page {page_num}: 0 produit")
-                        # on continue pas forcément jusqu'au bout inutilement
-                        break
+                        continue
 
                     print(f"  -> page {page_num}: {len(page_rows)} produits")
 
                     for r in page_rows:
                         asin = r.get("asin")
+                        title = r.get("title") or ""
+                        matched_id = guess_target_id(title=title, targets_df=targets_df)
+
+                        if not matched_id:
+                            continue
+
+                        r["idsmartphone"] = matched_id
+                        r["label_cible"] = get_label_from_id(targets_df, matched_id)
+
                         if asin and asin not in seen_asins:
                             seen_asins.add(asin)
                             all_listing_products.append(r)
 
                     time.sleep(SLEEP_LISTING_SEC)
 
-            # sécurité
             all_listing_products = all_listing_products[:MAX_PRODUCTS_PER_RUN]
 
-            # 2) pages produit + offres
             final_rows = []
 
             for i, prod in enumerate(all_listing_products, start=1):
@@ -769,19 +796,9 @@ def run_brand(config_path: str) -> None:
                     continue
 
                 for row in product_rows:
-                    row["label_cible"] = None
-                    row["idsmartphone"] = guess_target_id(
-                        title=row.get("title") or listing_title or "",
-                        asin=asin,
-                        targets_df=targets_df,
-                    )
+                    row["idsmartphone"] = prod.get("idsmartphone")
+                    row["label_cible"] = prod.get("label_cible")
 
-                    if row["idsmartphone"] and not targets_df.empty:
-                        m = targets_df[targets_df["idsmartphone"] == row["idsmartphone"]]
-                        if not m.empty:
-                            row["label_cible"] = safe_str(m.iloc[0]["label_cible"])
-
-                    # fallback title/price/rating listing
                     if not row.get("title"):
                         row["title"] = listing_title
                     if row.get("ratingValue") is None:
@@ -800,11 +817,11 @@ def run_brand(config_path: str) -> None:
             browser.close()
 
     if not final_rows:
-        raise RuntimeError("Aucune donnée récupérée sur ce run.")
+        print("Aucune donnée récupérée sur ce run.")
+        return
 
     df_run = pd.DataFrame(final_rows)
 
-    # nettoyage final
     for col in [
         "idsmartphone", "label_cible", "asin", "title", "seller_name", "shipped_by",
         "condition_label", "availability_label", "url_product", "url_offer",
@@ -813,8 +830,7 @@ def run_brand(config_path: str) -> None:
         if col in df_run.columns:
             df_run[col] = df_run[col].apply(safe_str)
 
-    # déduplication
-    dedup_cols = ["asin", "seller_name", "shipped_by", "condition_label", "price_eur"]
+    dedup_cols = ["idsmartphone", "asin", "seller_name", "shipped_by", "condition_label", "price_eur"]
     dedup_cols = [c for c in dedup_cols if c in df_run.columns]
     df_run = df_run.drop_duplicates(subset=dedup_cols).reset_index(drop=True)
 
